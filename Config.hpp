@@ -21,6 +21,7 @@ using TGestureRegistrar   = SDispatchResult (*)(size_t fingerCount, const std::s
 enum class ELayout {
     VERTICAL,
     HORIZONTAL,
+    AUTO,
 };
 
 enum class EScrollAction {

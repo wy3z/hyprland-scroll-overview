@@ -323,6 +323,9 @@ int getWorkspaceGap() {
 
 ELayout getLayout() {
     const auto LAYOUT = getValue<std::string>("plugin:scrolloverview:layout");
+    if (LAYOUT == "auto")
+        return ELayout::AUTO;
+
     return LAYOUT == "horizontal" ? ELayout::HORIZONTAL : ELayout::VERTICAL;
 }
 
