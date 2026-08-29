@@ -15,7 +15,7 @@ hl.bind("SUPER + g", function()
 end)
 ```
 
-A bare `toggle` opens only on the active monitor. If a window preview is dragged into another enabled monitor, ScrollOverview temporarily opens an overview on that destination so the drag can continue seamlessly. Any destination overview opened automatically for the drag closes after a successful drop or cancellation; an overview that was already open remains open.
+A bare `toggle` initially opens only on the active monitor. If a window preview is dragged into another enabled monitor, ScrollOverview temporarily opens an overview on that destination so the drag can continue seamlessly. A successful cross-monitor drop keeps both overviews open until they are manually closed; cancelling the drag dismisses only destinations opened automatically for it. When multiple overviews are open, a bare `toggle` closes all of them.
 
 A dispatcher does not have to be used only as a standalone keybind action. It can be called from any Lua function and combined with conditions, configuration changes, timers, or other dispatchers as part of a larger script.
 
@@ -46,7 +46,7 @@ Controls the overview state.
 | `open [monitor\|all]` | open on the active monitor, a named monitor, or every monitor |
 | `on [monitor\|all]` | same as `open` |
 
-For example, `toggle DP-1` targets only `DP-1`. A bare `toggle` targets only the active monitor, while `toggle all` is an explicit persistent multi-monitor mode that opens all missing overviews or closes them when they are all already open. A bare `close` closes all open overviews.
+For example, `toggle DP-1` targets only `DP-1`. A bare `toggle` opens only on the active monitor when no overview is open, closes that overview when only one is open, and closes all overviews when a completed cross-monitor drag has left multiple monitors open. `toggle all` remains the explicit persistent multi-monitor mode that opens all missing overviews or closes them when they are all already open. A bare `close` closes all open overviews.
 
 ### `hl.plugin.scrolloverview.navigate`
 
