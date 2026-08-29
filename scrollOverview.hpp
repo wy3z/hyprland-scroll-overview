@@ -58,6 +58,7 @@ class CScrollOverview : public IOverview {
     bool         windowDispatcherAction(const std::string& action) override;
 
     void         fullRender() override;
+    bool         adoptNativeWindowDrag(PHLWINDOW expectedWindow = {});
 
   private:
     enum class ECloseMode {
@@ -114,7 +115,6 @@ class CScrollOverview : public IOverview {
     void      refreshDragOriginalOverviewBoxes();
     void                        clearDragPending();
     void                        beginWindowDrag(PHLWINDOW window);
-    bool                        adoptNativeWindowDrag();
     void                        ensureDragDestinationOverview();
     void                        updateWindowDrag();
     void                        endWindowDrag();

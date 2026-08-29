@@ -1039,16 +1039,15 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
     lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
 
     auto onMouseMove = [this](Vector2D, Event::SCallbackInfo& info) {
+        if (!g_pointerGrabOverview && adoptNativeWindowDragIntoOverview()) {
+            info.cancelled = true;
+            return;
+        }
+
         const auto INPUTOVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
 
         if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) || (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this))
             return;
-
-        if (!g_pointerGrabOverview && adoptNativeWindowDrag()) {
-            info.cancelled = true;
-            updateWindowDrag();
-            return;
-        }
 
         if (dragCancelledAwaitingRelease) {
             info.cancelled = true;
@@ -2687,14 +2686,15 @@ void CScrollOverview::beginWindowDrag(PHLWINDOW window) {
     updateWindowDrag();
 }
 
-bool CScrollOverview::adoptNativeWindowDrag() {
+bool CScrollOverview::adoptNativeWindowDrag(PHLWINDOW expectedWindow) {
     if (dragActiveWindow || g_finishingAdoptedNativeDrag || !g_layoutManager)
         return false;
 
     const auto& DRAGCONTROLLER = g_layoutManager->dragController();
     const auto  TARGET         = DRAGCONTROLLER ? DRAGCONTROLLER->target() : nullptr;
     const auto  WINDOW         = TARGET ? getOverviewWindowToShow(TARGET->window()) : PHLWINDOW{};
-    if (!TARGET || DRAGCONTROLLER->mode() != MBIND_MOVE || !DRAGCONTROLLER->dragThresholdReached() || !shouldShowOverviewWindow(WINDOW) || !WINDOW->layoutTarget())
+    if (!TARGET || (expectedWindow && WINDOW != getOverviewWindowToShow(expectedWindow)) || DRAGCONTROLLER->mode() != MBIND_MOVE || !DRAGCONTROLLER->dragThresholdReached() ||
+        !shouldShowOverviewWindow(WINDOW) || !WINDOW->layoutTarget())
         return false;
 
     const auto ORIGINALWORKSPACE = WINDOW->m_workspace;

@@ -235,6 +235,34 @@ static SP<IOverview> dispatcherOverview() {
     return activeScrollOverview();
 }
 
+bool adoptNativeWindowDragIntoOverview() {
+    if (scrollOverviews().empty() || !g_layoutManager || !g_pInputManager)
+        return false;
+
+    const auto& DRAGCONTROLLER = g_layoutManager->dragController();
+    const auto  TARGET         = DRAGCONTROLLER ? DRAGCONTROLLER->target() : nullptr;
+    const auto  WINDOW         = TARGET ? TARGET->window() : PHLWINDOW{};
+    if (!WINDOW || DRAGCONTROLLER->mode() != MBIND_MOVE || !DRAGCONTROLLER->dragThresholdReached())
+        return false;
+
+    const auto CURSOR  = g_pInputManager->getMouseCoordsInternal();
+    auto       monitor = State::monitorState()->query().vec(CURSOR).run();
+    if (!monitor || !monitor->m_enabled || !monitor->logicalBox().containsPoint(CURSOR))
+        return false;
+
+    auto        result   = openOverview(monitor);
+    auto* const overview = result.overview ? dynamic_cast<CScrollOverview*>(result.overview.get()) : nullptr;
+    if (!overview || !overview->adoptNativeWindowDrag(WINDOW)) {
+        if (result.created && result.overview)
+            result.overview->dismissTransient();
+        return false;
+    }
+
+    result.overview->requestInputFrame();
+    result.overview->damage();
+    return true;
+}
+
 SOverviewOpenResult openOverview(PHLMONITOR monitor, bool swipe) {
     if (!monitor)
         return {};
