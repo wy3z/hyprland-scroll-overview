@@ -1039,11 +1039,6 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
     lastMousePosLocal = getOverviewMousePosLocal(pMonitor.lock());
 
     auto onMouseMove = [this](Vector2D, Event::SCallbackInfo& info) {
-        if (!g_pointerGrabOverview && adoptNativeWindowDragIntoOverview()) {
-            info.cancelled = true;
-            return;
-        }
-
         const auto INPUTOVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
 
         if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) || (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this))
@@ -1157,23 +1152,26 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
 
         const bool FORWARDEDTOPLAYERRELEASE =
             event.state == WL_POINTER_BUTTON_STATE_RELEASED && g_topLayerPointerButtons.contains(event.button);
-        const bool ADOPTEDNATIVEDRAGRELEASE = dragAdoptedFromNative && g_pointerGrabOverview == this && event.state == WL_POINTER_BUTTON_STATE_RELEASED;
-        const bool CANCELLEDGRABRELEASE = closing && dragCancelledAwaitingRelease && g_pointerGrabOverview == this && event.state == WL_POINTER_BUTTON_STATE_RELEASED;
+        const bool ADOPTEDNATIVEDRAGRELEASE = dragAdoptedFromNative && g_pointerGrabOverview == this && event.state == WL_POINTER_BUTTON_STATE_RELEASED &&
+            event.button == adoptedNativeDragButton;
+        const bool CANCELLEDGRABRELEASE = closing && dragCancelledAwaitingRelease && g_pointerGrabOverview == this && event.state == WL_POINTER_BUTTON_STATE_RELEASED &&
+            (!dragAdoptedFromNative || event.button == adoptedNativeDragButton);
         const auto INPUTOVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
         if ((closing && !CANCELLEDGRABRELEASE) || (g_pointerGrabOverview && g_pointerGrabOverview != this) ||
             (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this && !FORWARDEDTOPLAYERRELEASE))
             return;
 
-        if (dragCancelledAwaitingRelease && event.state != WL_POINTER_BUTTON_STATE_RELEASED) {
+        if (dragCancelledAwaitingRelease && (event.state != WL_POINTER_BUTTON_STATE_RELEASED || (dragAdoptedFromNative && event.button != adoptedNativeDragButton))) {
             info.cancelled = true;
             return;
         }
 
-        const bool RELEASESPOINTERGRAB = event.state == WL_POINTER_BUTTON_STATE_RELEASED;
+        const bool RELEASESPOINTERGRAB = event.state == WL_POINTER_BUTTON_STATE_RELEASED && (!dragAdoptedFromNative || event.button == adoptedNativeDragButton);
         auto       releasePointerGrab  = Hyprutils::Utils::CScopeGuard([this, RELEASESPOINTERGRAB] {
             if (RELEASESPOINTERGRAB && g_pointerGrabOverview == this) {
                 dragCancelledAwaitingRelease = false;
                 dragAdoptedFromNative        = false;
+                adoptedNativeDragButton      = 0;
                 g_pointerGrabOverview        = nullptr;
 
                 if (closing && closeRemovalPending)
@@ -2686,63 +2684,98 @@ void CScrollOverview::beginWindowDrag(PHLWINDOW window) {
     updateWindowDrag();
 }
 
-bool CScrollOverview::adoptNativeWindowDrag(PHLWINDOW expectedWindow) {
-    if (dragActiveWindow || g_finishingAdoptedNativeDrag || !g_layoutManager)
-        return false;
+std::optional<SNativeWindowDragState> CScrollOverview::captureNativeWindowDrag(uint32_t button) {
+    if (g_finishingAdoptedNativeDrag || !g_layoutManager || !g_pInputManager || button == 0)
+        return std::nullopt;
 
-    const auto& DRAGCONTROLLER = g_layoutManager->dragController();
-    const auto  TARGET         = DRAGCONTROLLER ? DRAGCONTROLLER->target() : nullptr;
-    const auto  WINDOW         = TARGET ? getOverviewWindowToShow(TARGET->window()) : PHLWINDOW{};
-    if (!TARGET || (expectedWindow && WINDOW != getOverviewWindowToShow(expectedWindow)) || DRAGCONTROLLER->mode() != MBIND_MOVE || !DRAGCONTROLLER->dragThresholdReached() ||
-        !shouldShowOverviewWindow(WINDOW) || !WINDOW->layoutTarget())
-        return false;
+    const auto& dragController = g_layoutManager->dragController();
+    const auto  target         = dragController ? dragController->target() : nullptr;
+    const auto  window         = target ? getOverviewWindowToShow(target->window()) : PHLWINDOW{};
+    if (!target || dragController->mode() != MBIND_MOVE || !dragController->dragThresholdReached() || !shouldShowOverviewWindow(window) || window->layoutTarget() != target)
+        return std::nullopt;
 
-    const auto ORIGINALWORKSPACE = WINDOW->m_workspace;
-    const auto ORIGINALBOX       = TARGET->position();
-    const auto ORIGINALVISUALBOX = WINDOW->m_group ? ORIGINALBOX : WINDOW->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
-    const auto ORIGINALFLOATSIZE = TARGET->lastFloatingSize();
-    const bool STARTEDTILED      = DRAGCONTROLLER->draggingTiled();
-    const auto CURSOR            = g_pInputManager->getMouseCoordsInternal();
-    const auto RATIO             = Vector2D{
-        ORIGINALVISUALBOX.width > 0.0 ? (CURSOR.x - ORIGINALVISUALBOX.x) / ORIGINALVISUALBOX.width : 0.5,
-        ORIGINALVISUALBOX.height > 0.0 ? (CURSOR.y - ORIGINALVISUALBOX.y) / ORIGINALVISUALBOX.height : 0.5,
+    auto workspace   = target->workspace();
+    auto sourceMonitor = workspace ? workspace->m_monitor.lock() : window->m_monitor.lock();
+    if (!workspace || !sourceMonitor || !sourceMonitor->m_enabled)
+        return std::nullopt;
+
+    const auto geometry  = target->position();
+    const auto visualBox = window->m_group ? geometry : window->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+    const auto cursor    = g_pInputManager->getMouseCoordsInternal();
+
+    return SNativeWindowDragState{
+        .target        = target,
+        .window        = window,
+        .workspace     = workspace,
+        .sourceMonitor = sourceMonitor,
+        .geometry      = geometry,
+        .visualBox     = visualBox,
+        .floatingSize  = target->lastFloatingSize(),
+        .grabRatio     = Vector2D{
+            visualBox.width > 0.0 ? (cursor.x - visualBox.x) / visualBox.width : 0.5,
+            visualBox.height > 0.0 ? (cursor.y - visualBox.y) / visualBox.height : 0.5,
+        },
+        .button       = button,
+        .startedTiled = dragController->draggingTiled(),
     };
+}
+
+static void neutralizeNativeWindowDrag() {
+    const auto& dragController = g_layoutManager->dragController();
+    if (!dragController)
+        return;
 
     g_finishingAdoptedNativeDrag = true;
-    DRAGCONTROLLER->m_dragMode   = MBIND_INVALID;
+    // endDragTarget() normally commits native placement. Making the private mode
+    // invalid first lets Hyprland release its controller state without moving or
+    // restoring the window; the overview now owns the captured drag transaction.
+    dragController->m_dragMode = MBIND_INVALID;
     g_layoutManager->endDragTarget();
     g_finishingAdoptedNativeDrag = false;
+}
 
-    if (!shouldShowOverviewWindow(WINDOW) || !WINDOW->layoutTarget())
+bool CScrollOverview::adoptNativeWindowDrag(const SNativeWindowDragState& state) {
+    if (dragActiveWindow || g_finishingAdoptedNativeDrag || !state.target || !state.window || !state.workspace || !state.sourceMonitor || state.button == 0 ||
+        pMonitor.lock() != state.sourceMonitor || !shouldShowOverviewWindow(state.window) || state.window->layoutTarget() != state.target || state.target->workspace() != state.workspace)
+        return false;
+
+    neutralizeNativeWindowDrag();
+
+    if (!shouldShowOverviewWindow(state.window) || state.window->layoutTarget() != state.target)
         return false;
 
     g_pseudoFocusedWindow.reset();
     g_pseudoFocusUntil = {};
-    closeOnWindow      = WINDOW;
-    rememberSelection(WINDOW);
+    closeOnWindow      = state.window;
+    rememberSelection(state.window);
 
-    dragActiveWindow             = WINDOW;
-    dragOriginalWorkspace        = ORIGINALWORKSPACE;
-    dragOriginalBox              = ORIGINALBOX;
-    dragOriginalVisualBox        = ORIGINALVISUALBOX;
+    dragActiveWindow             = state.window;
+    dragOriginalWorkspace        = state.workspace;
+    dragOriginalBox              = state.geometry;
+    dragOriginalVisualBox        = state.visualBox;
     dragOriginalOverviewBox      = CBox{};
     dragOriginalOverviewHitbox   = CBox{};
-    dragOriginalFloatSize        = ORIGINALFLOATSIZE;
+    dragOriginalFloatSize        = state.floatingSize;
     dragOriginalTapeTranslation  = Vector2D{};
-    dragGrabRatio                = RATIO;
+    dragGrabRatio                = state.grabRatio;
     dragGrabOffsetLocal          = Vector2D{};
     dragStartMouseLocal          = getOverviewMousePosLocal(pMonitor.lock());
     lastMousePosLocal            = dragStartMouseLocal;
-    dragStartedTiled             = STARTEDTILED;
+    dragStartedTiled             = state.startedTiled;
     dragAdoptedFromNative        = true;
+    adoptedNativeDragButton      = state.button;
     dragCancelledAwaitingRelease = false;
     g_pointerGrabOverview        = this;
 
-    if (const auto ALGO = overviewScrollingAlgorithmForWorkspace(ORIGINALWORKSPACE); ALGO && ALGO->m_scrollingData && ALGO->m_scrollingData->controller)
+    if (const auto ALGO = overviewScrollingAlgorithmForWorkspace(state.workspace); ALGO && ALGO->m_scrollingData && ALGO->m_scrollingData->controller)
         dragOriginalTapeTranslation = overviewScrollingCameraTranslation(ALGO);
 
-    requestInputFrame();
-    damage();
+    for (const auto& overview : scrollOverviews()) {
+        if (overview) {
+            overview->requestInputFrame();
+            overview->damage();
+        }
+    }
     return true;
 }
 
@@ -2896,6 +2929,8 @@ void CScrollOverview::clearDragPending() {
     dragActiveWindow.reset();
     dragOriginalWorkspace.reset();
     dragStartedTiled            = false;
+    if (!dragAdoptedFromNative)
+        adoptedNativeDragButton = 0;
     dragOriginalFloatSize       = Vector2D{};
     dragOriginalTapeTranslation = Vector2D{};
     dragGrabOffsetLocal         = Vector2D{};

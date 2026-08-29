@@ -44,7 +44,12 @@ typedef void (*origScheduleFrame)(void*, Aquamarine::IOutput::scheduleFrameReaso
 typedef void (*origSendFrameEventsToWorkspace)(void*, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp&);
 typedef void (*origSurfaceFrame)(void*, const Time::steady_tp&);
 
-static bool g_unloading = false;
+static bool                g_unloading = false;
+static CHyprSignalListener g_nativeDragMotionListener;
+static CHyprSignalListener g_nativeDragButtonListener;
+static wl_event_source*    g_nativeDragProbeSource   = nullptr;
+static uint32_t            g_nativeDragButton        = 0;
+static uint32_t            g_nativeDragPressCandidate = 0;
 
 // Do NOT change this function.
 APICALL EXPORT std::string PLUGIN_API_VERSION() {
@@ -235,32 +240,54 @@ static SP<IOverview> dispatcherOverview() {
     return activeScrollOverview();
 }
 
-bool adoptNativeWindowDragIntoOverview() {
-    if (scrollOverviews().empty() || !g_layoutManager || !g_pInputManager)
+static bool probeNativeWindowDrag(bool fromIdle = false) {
+    if (fromIdle)
+        g_nativeDragProbeSource = nullptr;
+    else if (g_nativeDragProbeSource) {
+        wl_event_source_remove(g_nativeDragProbeSource);
+        g_nativeDragProbeSource = nullptr;
+    }
+    if (g_unloading || scrollOverviews().empty() || !g_layoutManager || !g_pInputManager)
         return false;
 
-    const auto& DRAGCONTROLLER = g_layoutManager->dragController();
-    const auto  TARGET         = DRAGCONTROLLER ? DRAGCONTROLLER->target() : nullptr;
-    const auto  WINDOW         = TARGET ? TARGET->window() : PHLWINDOW{};
-    if (!WINDOW || DRAGCONTROLLER->mode() != MBIND_MOVE || !DRAGCONTROLLER->dragThresholdReached())
+    const auto& dragController = g_layoutManager->dragController();
+    if (g_nativeDragButton == 0 && dragController && dragController->mode() == MBIND_MOVE)
+        g_nativeDragButton = g_nativeDragPressCandidate;
+    if (g_nativeDragButton == 0)
         return false;
 
-    const auto CURSOR  = g_pInputManager->getMouseCoordsInternal();
-    auto       monitor = State::monitorState()->query().vec(CURSOR).run();
-    if (!monitor || !monitor->m_enabled || !monitor->logicalBox().containsPoint(CURSOR))
+    const auto state = CScrollOverview::captureNativeWindowDrag(g_nativeDragButton);
+    if (!state)
         return false;
 
-    auto        result   = openOverview(monitor);
+    auto result = openOverview(state->sourceMonitor);
+    if (result.overview && result.overview->isClosing())
+        result.overview->reopen();
+
     auto* const overview = result.overview ? dynamic_cast<CScrollOverview*>(result.overview.get()) : nullptr;
-    if (!overview || !overview->adoptNativeWindowDrag(WINDOW)) {
+    if (!overview || !overview->adoptNativeWindowDrag(*state)) {
+        // A source overview created for this user activation is persistent once
+        // adoption succeeds; only roll it back when the handoff itself fails.
         if (result.created && result.overview)
             result.overview->dismissTransient();
         return false;
     }
 
-    result.overview->requestInputFrame();
-    result.overview->damage();
     return true;
+}
+
+static void queueNativeWindowDragProbe() {
+    if (g_nativeDragProbeSource || scrollOverviews().empty() || !g_pCompositor)
+        return;
+
+    g_nativeDragProbeSource = wl_event_loop_add_idle(
+        g_pCompositor->m_wlEventLoop,
+        [](void*) {
+            // input.mouse.move is emitted before Hyprland updates the layout drag
+            // controller. Probe at idle after that native motion has completed.
+            probeNativeWindowDrag(true);
+        },
+        nullptr);
 }
 
 SOverviewOpenResult openOverview(PHLMONITOR monitor, bool swipe) {
@@ -562,6 +589,29 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             overview->onPreRender();
     });
 
+    g_nativeDragMotionListener = Event::bus()->m_events.input.mouse.move.listen([](Vector2D, Event::SCallbackInfo&) { queueNativeWindowDragProbe(); });
+    g_nativeDragButtonListener = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent event, Event::SCallbackInfo&) {
+        if (event.state == WL_POINTER_BUTTON_STATE_PRESSED) {
+            const bool nativeMoveAlreadyActive = g_layoutManager && g_layoutManager->dragController() && g_layoutManager->dragController()->mode() == MBIND_MOVE;
+            // The button signal precedes keybind dispatch, so remember the press
+            // that may start a native drag. Once moving, unrelated presses must
+            // not replace the initiating button.
+            if (!nativeMoveAlreadyActive) {
+                g_nativeDragPressCandidate = event.button;
+                queueNativeWindowDragProbe();
+            } else if (g_nativeDragButton == 0)
+                g_nativeDragButton = event.button;
+        } else if (event.button == g_nativeDragButton || event.button == g_nativeDragPressCandidate) {
+            // Probe synchronously as well: an immediate release can arrive before
+            // the coalesced post-motion callback gets its event-loop turn.
+            if (g_nativeDragButton == 0)
+                g_nativeDragButton = event.button;
+            probeNativeWindowDrag();
+            g_nativeDragButton         = 0;
+            g_nativeDragPressCandidate = 0;
+        }
+    });
+
     ScrollOverview::Config::registerDispatcher("overview", ::onOverviewDispatcher);
     ScrollOverview::Config::registerDispatcher("navigate", ::onNavigateDispatcher);
     ScrollOverview::Config::registerDispatcher("window", ::onWindowDispatcher);
@@ -575,6 +625,14 @@ APICALL EXPORT void PLUGIN_EXIT() {
     g_pHyprRenderer->m_renderPass.removeAllOfType("CScrollOverviewPassElement");
 
     g_unloading = true;
+    g_nativeDragMotionListener.reset();
+    g_nativeDragButtonListener.reset();
+    if (g_nativeDragProbeSource) {
+        wl_event_source_remove(g_nativeDragProbeSource);
+        g_nativeDragProbeSource = nullptr;
+    }
+    g_nativeDragButton         = 0;
+    g_nativeDragPressCandidate = 0;
     clearScrollOverviews();
     disableScrollOverviewHooks();
 

@@ -25,6 +25,19 @@
 class CMonitor;
 struct wl_event_source;
 
+struct SNativeWindowDragState {
+    SP<Layout::ITarget> target;
+    PHLWINDOW           window;
+    PHLWORKSPACE        workspace;
+    PHLMONITOR          sourceMonitor;
+    CBox                geometry;
+    CBox                visualBox;
+    Vector2D            floatingSize;
+    Vector2D            grabRatio;
+    uint32_t            button = 0;
+    bool                startedTiled = false;
+};
+
 class CScrollOverview : public IOverview {
   public:
     CScrollOverview(PHLWORKSPACE startedOn_, bool swipe = false, PHLMONITOR monitor = {});
@@ -58,7 +71,8 @@ class CScrollOverview : public IOverview {
     bool         windowDispatcherAction(const std::string& action) override;
 
     void         fullRender() override;
-    bool         adoptNativeWindowDrag(PHLWINDOW expectedWindow = {});
+    static std::optional<SNativeWindowDragState> captureNativeWindowDrag(uint32_t button);
+    bool         adoptNativeWindowDrag(const SNativeWindowDragState& state);
 
   private:
     enum class ECloseMode {
@@ -221,7 +235,8 @@ class CScrollOverview : public IOverview {
     bool                             scrollingPanPointerDown = false;
     bool                             submapMouseClickPending = false;
     bool                             dragStartedTiled      = false;
-    bool                                          dragAdoptedFromNative             = false;
+    bool                             dragAdoptedFromNative = false;
+    uint32_t                         adoptedNativeDragButton = 0;
     bool                             emittingFullscreenVisibilityState = false;
     bool                             inputConfigOverridden = false;
     bool                             realtimePreviewTimerArmed = false;

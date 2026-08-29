@@ -8,4 +8,3 @@ struct SOverviewOpenResult {
 };
 
 SOverviewOpenResult openOverview(PHLMONITOR monitor, bool swipe = false);
-bool                adoptNativeWindowDragIntoOverview();
