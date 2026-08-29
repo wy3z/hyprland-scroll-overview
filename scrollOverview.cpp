@@ -2781,7 +2781,7 @@ void CScrollOverview::updateWindowResize() {
     damage();
 }
 
-void CScrollOverview::finishWindowDragSession() {
+void CScrollOverview::finishWindowDragSession(const SP<IOverview>& persistentDestination) {
     clearDragPending();
 
     auto transientOverviews = std::move(dragTransientOverviews);
@@ -2789,7 +2789,7 @@ void CScrollOverview::finishWindowDragSession() {
 
     for (const auto& transientRef : transientOverviews) {
         const auto TRANSIENT = transientRef.lock();
-        if (!TRANSIENT || TRANSIENT.get() == this || std::ranges::find(scrollOverviews(), TRANSIENT) == scrollOverviews().end())
+        if (!TRANSIENT || TRANSIENT == persistentDestination || TRANSIENT.get() == this || std::ranges::find(scrollOverviews(), TRANSIENT) == scrollOverviews().end())
             continue;
 
         TRANSIENT->dismissTransient();
@@ -3093,7 +3093,8 @@ bool CScrollOverview::moveScrollingStackSelection(bool next) {
 }
 
 void CScrollOverview::endWindowDrag() {
-    auto finishDragSession = Hyprutils::Utils::CScopeGuard([this] { finishWindowDragSession(); });
+    SP<IOverview> persistentDestination;
+    auto          finishDragSession = Hyprutils::Utils::CScopeGuard([this, &persistentDestination] { finishWindowDragSession(persistentDestination); });
 
     ensureDragDestinationOverview();
 
@@ -3126,6 +3127,9 @@ void CScrollOverview::endWindowDrag() {
 
     if (!DROPWORKSPACE)
         return;
+
+    if (dropOverview != this)
+        persistentDestination = targetOverview;
 
     const auto SOURCEFULLSCREENWINDOW = ORIGINALWORKSPACE ? getOverviewWindowToShow(Fullscreen::controller()->getFullscreenWindow(ORIGINALWORKSPACE)) : PHLWINDOW{};
     const bool RESTORESOURCEFULLSCREENFOCUS = WINDOW && WINDOW->m_isFloating && MOVEWORKSPACE && shouldShowOverviewWindow(SOURCEFULLSCREENWINDOW) &&

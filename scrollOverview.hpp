@@ -115,7 +115,7 @@ class CScrollOverview : public IOverview {
     void                        ensureDragDestinationOverview();
     void      updateWindowDrag();
     void      endWindowDrag();
-    void                        finishWindowDragSession();
+    void                        finishWindowDragSession(const SP<IOverview>& persistentDestination = {});
     void                        cancelWindowDrag();
     CBox      resizedWindowBox() const;
     void      beginWindowResize();

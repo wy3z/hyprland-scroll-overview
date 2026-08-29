@@ -288,6 +288,11 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
     if (ACTION != "toggle" && ACTION != "on" && ACTION != "open" && ACTION != "enable")
         return {.success = false, .error = "invalid arg. expected toggle|open|close|select [monitor|all]"};
 
+    if (ACTION == "toggle" && TARGET.empty() && scrollOverviews().size() > 1) {
+        closeAll();
+        return {};
+    }
+
     const auto MONITORS = overviewTargetMonitors(TARGET);
     if (MONITORS.empty())
         return {.success = false, .error = TARGET.empty() ? "no active monitor" : "monitor not found: " + TARGET};
