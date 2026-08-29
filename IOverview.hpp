@@ -31,6 +31,7 @@ class IOverview {
     virtual void  onSwipeEnd()                = 0;
 
     virtual void  close()                  = 0;
+    virtual void  dismissTransient()                                = 0;
     virtual bool  isClosing() const        = 0;
     virtual void  reopen()                 = 0;
     virtual void  selectHoveredWorkspace() = 0;
