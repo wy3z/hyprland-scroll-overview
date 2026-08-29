@@ -13,6 +13,8 @@ hl.define_submap("scrolloverview", function()
     hl.bind("down",   hl.plugin.scrolloverview.navigate("down"))
     hl.bind("return", hl.plugin.scrolloverview.overview("select"))
     hl.bind("escape", hl.plugin.scrolloverview.overview("off"))
+    -- Keep Hyprland's native move drag available on monitors without an overview.
+    hl.bind("SUPER + mouse:272", hl.dsp.window.drag(), { mouse = true })
     hl.bind("mouse:272", function()
         -- Select the clicked window, or just the workspace if no window was clicked, then close the overview. This is the default behaviour if submap is not defined.
         hl.plugin.scrolloverview.overview("select")
