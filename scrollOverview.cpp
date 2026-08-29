@@ -72,6 +72,7 @@ static PHLWINDOW getOverviewFullscreenVisibilityWindow(const PHLWORKSPACE& works
 static constexpr const char* OVERVIEW_SUBMAP = "scrolloverview";
 static constexpr auto        POST_DROP_PSEUDO_FOCUS_DURATION = std::chrono::milliseconds(100);
 static CScrollOverview*             g_pointerGrabOverview = nullptr;
+static bool                         g_finishingAdoptedNativeDrag    = false;
 static std::unordered_set<uint32_t> g_topLayerPointerButtons;
 static PHLWINDOWREF                 g_pseudoFocusedWindow;
 static Time::steady_tp              g_pseudoFocusUntil = {};
@@ -1043,6 +1044,12 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         if (closing || (g_pointerGrabOverview && g_pointerGrabOverview != this) || (!g_pointerGrabOverview && INPUTOVERVIEW.get() != this))
             return;
 
+        if (!g_pointerGrabOverview && adoptNativeWindowDrag()) {
+            info.cancelled = true;
+            updateWindowDrag();
+            return;
+        }
+
         if (dragCancelledAwaitingRelease) {
             info.cancelled = true;
             return;
@@ -1151,6 +1158,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
 
         const bool FORWARDEDTOPLAYERRELEASE =
             event.state == WL_POINTER_BUTTON_STATE_RELEASED && g_topLayerPointerButtons.contains(event.button);
+        const bool ADOPTEDNATIVEDRAGRELEASE = dragAdoptedFromNative && g_pointerGrabOverview == this && event.state == WL_POINTER_BUTTON_STATE_RELEASED;
         const bool CANCELLEDGRABRELEASE = closing && dragCancelledAwaitingRelease && g_pointerGrabOverview == this && event.state == WL_POINTER_BUTTON_STATE_RELEASED;
         const auto INPUTOVERVIEW = scrollOverviewAt(g_pInputManager->getMouseCoordsInternal());
         if ((closing && !CANCELLEDGRABRELEASE) || (g_pointerGrabOverview && g_pointerGrabOverview != this) ||
@@ -1166,6 +1174,7 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
         auto       releasePointerGrab  = Hyprutils::Utils::CScopeGuard([this, RELEASESPOINTERGRAB] {
             if (RELEASESPOINTERGRAB && g_pointerGrabOverview == this) {
                 dragCancelledAwaitingRelease = false;
+                dragAdoptedFromNative        = false;
                 g_pointerGrabOverview        = nullptr;
 
                 if (closing && closeRemovalPending)
@@ -1179,6 +1188,12 @@ CScrollOverview::CScrollOverview(PHLWORKSPACE startedOn_, bool swipe_, PHLMONITO
                         this);
             }
         });
+
+        if (ADOPTEDNATIVEDRAGRELEASE) {
+            if (dragActiveWindow)
+                endWindowDrag();
+            return;
+        }
 
         const bool POINTERONTOPLAYER =
             !dragPendingPrimary && !resizePointerDown && !scrollingPanPointerDown && !dragActiveWindow && !resizeActiveWindow && isPointerOnTopLayer(pMonitor.lock());
@@ -2641,6 +2656,7 @@ void CScrollOverview::beginWindowDrag(PHLWINDOW window) {
 
     const auto TARGET             = WINDOW->layoutTarget();
     dragStartedTiled              = !TARGET->floating();
+    dragAdoptedFromNative         = false;
     dragOriginalFloatSize         = TARGET->lastFloatingSize();
     dragOriginalTapeTranslation  = Vector2D{};
     dragOriginalWorkspace         = WINDOW->m_workspace;
@@ -2669,6 +2685,69 @@ void CScrollOverview::beginWindowDrag(PHLWINDOW window) {
     }
 
     updateWindowDrag();
+}
+
+bool CScrollOverview::adoptNativeWindowDrag() {
+    if (dragActiveWindow || g_finishingAdoptedNativeDrag || !g_layoutManager)
+        return false;
+
+    const auto& DRAGCONTROLLER = g_layoutManager->dragController();
+    const auto  TARGET         = DRAGCONTROLLER ? DRAGCONTROLLER->target() : nullptr;
+    const auto  WINDOW         = TARGET ? getOverviewWindowToShow(TARGET->window()) : PHLWINDOW{};
+    if (!TARGET || DRAGCONTROLLER->mode() != MBIND_MOVE || !DRAGCONTROLLER->dragThresholdReached() || !shouldShowOverviewWindow(WINDOW) || !WINDOW->layoutTarget())
+        return false;
+
+    const auto CURSORWINDOW = Desktop::viewState()->hitTest().windowAt(g_pInputManager->getMouseCoordsInternal(),
+                                                                       Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING, WINDOW);
+    if (CURSORWINDOW)
+        return false;
+
+    const auto ORIGINALWORKSPACE = WINDOW->m_workspace;
+    const auto ORIGINALBOX       = TARGET->position();
+    const auto ORIGINALVISUALBOX = WINDOW->m_group ? ORIGINALBOX : WINDOW->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+    const auto ORIGINALFLOATSIZE = TARGET->lastFloatingSize();
+    const bool STARTEDTILED      = DRAGCONTROLLER->draggingTiled();
+    const auto CURSOR            = g_pInputManager->getMouseCoordsInternal();
+    const auto RATIO             = Vector2D{
+        ORIGINALVISUALBOX.width > 0.0 ? (CURSOR.x - ORIGINALVISUALBOX.x) / ORIGINALVISUALBOX.width : 0.5,
+        ORIGINALVISUALBOX.height > 0.0 ? (CURSOR.y - ORIGINALVISUALBOX.y) / ORIGINALVISUALBOX.height : 0.5,
+    };
+
+    g_finishingAdoptedNativeDrag = true;
+    g_layoutManager->endDragTarget();
+    g_finishingAdoptedNativeDrag = false;
+
+    if (!shouldShowOverviewWindow(WINDOW) || !WINDOW->layoutTarget())
+        return false;
+
+    g_pseudoFocusedWindow.reset();
+    g_pseudoFocusUntil = {};
+    closeOnWindow      = WINDOW;
+    rememberSelection(WINDOW);
+
+    dragActiveWindow             = WINDOW;
+    dragOriginalWorkspace        = ORIGINALWORKSPACE;
+    dragOriginalBox              = ORIGINALBOX;
+    dragOriginalVisualBox        = ORIGINALVISUALBOX;
+    dragOriginalOverviewBox      = CBox{};
+    dragOriginalOverviewHitbox   = CBox{};
+    dragOriginalFloatSize        = ORIGINALFLOATSIZE;
+    dragOriginalTapeTranslation  = Vector2D{};
+    dragGrabRatio                = RATIO;
+    dragGrabOffsetLocal          = Vector2D{};
+    dragStartMouseLocal          = getOverviewMousePosLocal(pMonitor.lock());
+    lastMousePosLocal            = dragStartMouseLocal;
+    dragStartedTiled             = STARTEDTILED;
+    dragAdoptedFromNative        = true;
+    dragCancelledAwaitingRelease = false;
+    g_pointerGrabOverview        = this;
+
+    if (const auto ALGO = overviewScrollingAlgorithmForWorkspace(ORIGINALWORKSPACE); ALGO && ALGO->m_scrollingData && ALGO->m_scrollingData->controller)
+        dragOriginalTapeTranslation = overviewScrollingCameraTranslation(ALGO);
+
+    requestInputFrame();
+    damage();
+    return true;
 }
 
 void CScrollOverview::beginWindowResize() {

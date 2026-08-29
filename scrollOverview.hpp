@@ -110,11 +110,12 @@ class CScrollOverview : public IOverview {
     CBox      draggedWindowBoxFor(PHLWINDOW window, size_t workspaceIdx, const Vector2D& pointLocal, const Vector2D& grabRatio) const;
     CBox      draggedWindowGlobalBox() const;
     void      refreshDragOriginalOverviewBoxes();
-    void      clearDragPending();
-    void      beginWindowDrag(PHLWINDOW window);
+    void                        clearDragPending();
+    void                        beginWindowDrag(PHLWINDOW window);
+    bool                        adoptNativeWindowDrag();
     void                        ensureDragDestinationOverview();
-    void      updateWindowDrag();
-    void      endWindowDrag();
+    void                        updateWindowDrag();
+    void                        endWindowDrag();
     void                        finishWindowDragSession(const SP<IOverview>& persistentDestination = {});
     void                        cancelWindowDrag();
     CBox      resizedWindowBox() const;
@@ -218,6 +219,7 @@ class CScrollOverview : public IOverview {
     bool                             scrollingPanPointerDown = false;
     bool                             submapMouseClickPending = false;
     bool                             dragStartedTiled      = false;
+    bool                                          dragAdoptedFromNative             = false;
     bool                             emittingFullscreenVisibilityState = false;
     bool                             inputConfigOverridden = false;
     bool                             realtimePreviewTimerArmed = false;
