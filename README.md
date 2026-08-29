@@ -82,7 +82,7 @@ hl.bind("SUPER + g", function()
 end)
 ```
 
-A bare `toggle` initially opens the overview only on the active monitor. While dragging a window preview, entering another monitor temporarily opens an overview there so the existing cross-monitor drop path can be used without releasing or clicking again. A successful cross-monitor drop keeps both overviews open until they are manually closed, while cancelling the drag dismisses only destinations opened automatically for it. When multiple overviews are open, a bare `toggle` closes all of them.
+A bare `toggle` initially opens the overview only on the active monitor. While dragging a window preview, entering another monitor temporarily opens an overview there so the existing cross-monitor drop path can be used without releasing or clicking again. You can also start Hyprland's normal move drag on a window from a monitor without an overview; entering an already-open overview hands the window to ScrollOverview for placement. A successful cross-monitor drop keeps both overviews open until they are manually closed, while cancelling the drag dismisses only destinations opened automatically for it. When multiple overviews are open, a bare `toggle` closes all of them.
 
 Use `toggle all` when you explicitly want persistent overviews on every monitor:
 

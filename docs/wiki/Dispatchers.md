@@ -15,7 +15,7 @@ hl.bind("SUPER + g", function()
 end)
 ```
 
-A bare `toggle` initially opens only on the active monitor. If a window preview is dragged into another enabled monitor, ScrollOverview temporarily opens an overview on that destination so the drag can continue seamlessly. A successful cross-monitor drop keeps both overviews open until they are manually closed; cancelling the drag dismisses only destinations opened automatically for it. When multiple overviews are open, a bare `toggle` closes all of them.
+A bare `toggle` initially opens only on the active monitor. If a window preview is dragged into another enabled monitor, ScrollOverview temporarily opens an overview on that destination so the drag can continue seamlessly. A window can also be picked up with Hyprland's normal move drag on a monitor without an overview; moving it into an already-open overview hands the drag to ScrollOverview for placement. A successful cross-monitor drop keeps both overviews open until they are manually closed; cancelling the drag dismisses only destinations opened automatically for it. When multiple overviews are open, a bare `toggle` closes all of them.
 
 A dispatcher does not have to be used only as a standalone keybind action. It can be called from any Lua function and combined with conditions, configuration changes, timers, or other dispatchers as part of a larger script.
 
