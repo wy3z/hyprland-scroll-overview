@@ -6,14 +6,16 @@ You can call dispatchers directly from your Lua configuration using `hl.plugin.s
 
 ### Keybind
 
-Bind `SUPER + g` to toggle the overview on all monitors:
+Bind `SUPER + g` to toggle the overview on the active monitor:
 
 ```lua
 -- hyprland.lua
 hl.bind("SUPER + g", function()
-    hl.plugin.scrolloverview.overview("toggle all")
+    hl.plugin.scrolloverview.overview("toggle")
 end)
 ```
+
+A bare `toggle` opens only on the active monitor. If a window preview is dragged into another enabled monitor, ScrollOverview temporarily opens an overview on that destination so the drag can continue seamlessly. Any destination overview opened automatically for the drag closes after a successful drop or cancellation; an overview that was already open remains open.
 
 A dispatcher does not have to be used only as a standalone keybind action. It can be called from any Lua function and combined with conditions, configuration changes, timers, or other dispatchers as part of a larger script.
 
@@ -44,7 +46,7 @@ Controls the overview state.
 | `open [monitor\|all]` | open on the active monitor, a named monitor, or every monitor |
 | `on [monitor\|all]` | same as `open` |
 
-For example, `toggle DP-1` targets only `DP-1`, while `toggle all` opens all missing overviews or closes them when they are all already open. A bare `toggle` still targets only the active monitor, and a bare `close` closes all open overviews.
+For example, `toggle DP-1` targets only `DP-1`. A bare `toggle` targets only the active monitor, while `toggle all` is an explicit persistent multi-monitor mode that opens all missing overviews or closes them when they are all already open. A bare `close` closes all open overviews.
 
 ### `hl.plugin.scrolloverview.navigate`
 

@@ -50,8 +50,8 @@ plugin {
     }
 }
 
-# Toggle ScrollOverview with SUPER+g
-bind = SUPER, g, scrolloverview:overview, "toggle all"
+# Toggle ScrollOverview on the active monitor with SUPER+g
+bind = SUPER, g, scrolloverview:overview, "toggle"
 ```
 
 ### Lua
@@ -76,10 +76,18 @@ hl.config({
     },
 })
 
--- Toggle ScrollOverview with SUPER+g
+-- Toggle ScrollOverview on the active monitor with SUPER+g
 hl.bind("SUPER + g", function()
-    hl.plugin.scrolloverview.overview("toggle all")
+    hl.plugin.scrolloverview.overview("toggle")
 end)
+```
+
+A bare `toggle` initially opens the overview only on the active monitor. While dragging a window preview, entering another monitor temporarily opens an overview there so the existing cross-monitor drop path can be used without releasing or clicking again. Overviews opened automatically for the drag close after either a successful drop or cancellation; destination overviews that were already open remain open.
+
+Use `toggle all` when you explicitly want persistent overviews on every monitor:
+
+```lua
+hl.plugin.scrolloverview.overview("toggle all")
 ```
 
 ## Documentation

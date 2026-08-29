@@ -1,4 +1,4 @@
-The configuration below is a good starting point for most users. It provides a balanced overview layout with workspace spacing, both wallpaper layers, blur, shadows, and a `SUPER + g` keybind that toggles the overview on all monitors. Adjust the individual values to match your workflow and visual preferences.
+The configuration below is a good starting point for most users. It provides a balanced overview layout with workspace spacing, both wallpaper layers, blur, shadows, and a `SUPER + g` keybind that toggles the overview on the active monitor. Adjust the individual values to match your workflow and visual preferences.
 
 ## Configuration
 
@@ -22,9 +22,9 @@ hl.config({
     },
 })
 
--- Toggle ScrollOverview with SUPER+g
+-- Toggle ScrollOverview on the active monitor with SUPER+g
 hl.bind("SUPER + g", function()
-    hl.plugin.scrolloverview.overview("toggle all")
+    hl.plugin.scrolloverview.overview("toggle")
 end)
 ```
 
