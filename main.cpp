@@ -15,6 +15,7 @@
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/managers/input/trackpad/GestureTypes.hpp>
+#include <hyprutils/utils/ScopeGuard.hpp>
 #include <hyprland/src/managers/input/trackpad/TrackpadGestures.hpp>
 
 #include <hyprutils/string/ConstVarList.hpp>
@@ -25,6 +26,7 @@ using namespace Hyprutils::String;
 #include "PluginVersion.hpp"
 #include "scrollOverview.hpp"
 #include "OverviewGesture.hpp"
+#include "OverviewOpen.hpp"
 
 // Methods
 static CFunctionHook* g_pScrollRenderWorkspaceHook = nullptr;
@@ -233,19 +235,23 @@ static SP<IOverview> dispatcherOverview() {
     return activeScrollOverview();
 }
 
-static bool openOverview(PHLMONITOR monitor) {
-    if (!monitor || scrollOverviewForMonitor(monitor))
-        return true;
+SOverviewOpenResult openOverview(PHLMONITOR monitor, bool swipe) {
+    if (!monitor)
+        return {};
+
+    if (const auto OVERVIEW = scrollOverviewForMonitor(monitor))
+        return {.overview = OVERVIEW, .created = false};
 
     if (!ensureScrollOverviewHooks())
-        return false;
+        return {};
 
     const bool PREVRENDERINGOVERVIEW = renderingOverview;
     renderingOverview                = true;
-    auto overview                    = makeShared<CScrollOverview>(monitor->m_activeWorkspace, false, monitor);
+    auto restoreRenderingOverview    = Hyprutils::Utils::CScopeGuard([PREVRENDERINGOVERVIEW] { renderingOverview = PREVRENDERINGOVERVIEW; });
+
+    auto overview = makeShared<CScrollOverview>(monitor->m_activeWorkspace, swipe, monitor);
     registerScrollOverview(overview);
-    renderingOverview = PREVRENDERINGOVERVIEW;
-    return true;
+    return {.overview = overview, .created = true};
 }
 
 static SDispatchResult onOverviewDispatcher(std::string arg) {
@@ -300,7 +306,7 @@ static SDispatchResult onOverviewDispatcher(std::string arg) {
     }
 
     for (const auto& monitor : MONITORS) {
-        if (!openOverview(monitor))
+        if (!openOverview(monitor).overview)
             return {.success = false, .error = "failed enabling overview hooks (is other overview plugin enabled?)"};
     }
     return {};
