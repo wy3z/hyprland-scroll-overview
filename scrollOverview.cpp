@@ -2697,11 +2697,6 @@ bool CScrollOverview::adoptNativeWindowDrag() {
     if (!TARGET || DRAGCONTROLLER->mode() != MBIND_MOVE || !DRAGCONTROLLER->dragThresholdReached() || !shouldShowOverviewWindow(WINDOW) || !WINDOW->layoutTarget())
         return false;
 
-    const auto CURSORWINDOW = Desktop::viewState()->hitTest().windowAt(g_pInputManager->getMouseCoordsInternal(),
-                                                                       Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING, WINDOW);
-    if (CURSORWINDOW)
-        return false;
-
     const auto ORIGINALWORKSPACE = WINDOW->m_workspace;
     const auto ORIGINALBOX       = TARGET->position();
     const auto ORIGINALVISUALBOX = WINDOW->m_group ? ORIGINALBOX : WINDOW->geometricBox(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
@@ -2714,6 +2709,7 @@ bool CScrollOverview::adoptNativeWindowDrag() {
     };
 
     g_finishingAdoptedNativeDrag = true;
+    DRAGCONTROLLER->m_dragMode   = MBIND_INVALID;
     g_layoutManager->endDragTarget();
     g_finishingAdoptedNativeDrag = false;
 

@@ -8,7 +8,9 @@
 #include <hyprland/src/helpers/signal/Signal.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
+#define private public
 #include <hyprland/src/layout/LayoutManager.hpp>
+#undef private
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprland/src/render/types.hpp>
 #include <chrono>
